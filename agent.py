@@ -101,10 +101,10 @@ class Agent:
             initial_state = self.env.reset()
             sequence = [] # Sequence of states
             sequence.extend(initial_state)
+            score = 0.0
             # Auto-reset after this:
             for t in range(max_t):
                 action = None
-                score = 0
                 processed_current_state = self.process_sequence(sequence)
                 if(random.random() < epsilon):
                     action = self.env.action_space.sample()
@@ -132,16 +132,13 @@ class Agent:
                     break
             
             if(stop_after_limit):
-                print('After game {} memory buffer {}% full'.format(game_counter, 100.0*len(self.memory)/self.memory_size))
                 if(len(self.memory) >= self.memory_size):
                     break 
-            else:
-                print('Memory buffer {}% full, score for game: {}'.format(100.0*len(self.memory)/self.memory_size, score))
 
     # This will attempt to train the graph:
     def train_network(self, games = 5000, batch_size=32, epochs=5, initial_epsilon=1.0, gamma=0.95):
-        while(len(self.memory) < batch_size):
-            self.get_samples(False, 1, epsilon=1.0) # Play randomly until memmory has at least batch_size entries
+        while(len(self.memory) < batch_size): # Play randomly until memmory has at least batch_size entries
+            self.get_samples(False, 1, epsilon=1.0) 
         # TODO: Check accuracy/score during and after training:
         for epoch in range(epochs):
             for game in range(games):
