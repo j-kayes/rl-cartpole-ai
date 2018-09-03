@@ -11,7 +11,7 @@ def fully_connected(input_tensor, outputs, activation_func=tf.nn.relu):
 
 class Agent: 
     
-    def __init__(self, environment, state_size, sequence_length=4, memory_size=100000):
+    def __init__(self, environment, state_size, learning_rate, sequence_length=4, memory_size=100000):
         self.env = environment
         self.sequence_length = sequence_length
         self.state_size = state_size
@@ -27,9 +27,15 @@ class Agent:
         self.memory = []
         self.memory_size = memory_size
         self.memory_index = 0
-
+        
+        self.lr = learning_rate
+        
         self.build_model()
+        self.loss = tf.reduce_mean(tf.squared_difference(self.target, self.output_layer))
+        self.optimize = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
         self.sess = tf.Session()
+        self.sess.run(tf.global_variables_initializer())
+        
 
     def __enter__(self):
         return self
@@ -39,7 +45,9 @@ class Agent:
 
     def build_model(self):
         # This will be used as the Q*(S,A) estimator, the input is the state and actions performed, and the output is the expected reward:
-        self.input_data = tf.placeholder(tf.float32, [None, self.input_size, 1], name = "x")
+        self.input_data = tf.placeholder(tf.float32, [None, self.input_size], name = "x")
+        self.target = tf.placeholder(tf.float32, [None], name = "y")
+
         self.fc1 = tf.layers.dropout(fully_connected(self.input_data, 128), rate=0.8)
         self.fc2 = tf.layers.dropout(fully_connected(self.fc1, 128), rate=0.8)
         self.fc3 = tf.layers.dropout(fully_connected(self.fc2, 128), rate=0.8)
@@ -77,9 +85,9 @@ class Agent:
         best_reward = None
         for action in self.action_space:
             # Join with processed state/action sequence data:
-            x_input = np.concatenate(self.process_sequence(sequence_data), action)
+            x_input = np.concatenate((self.process_sequence(sequence_data), action))
             # Feed into graph, determine reward:
-            exp_reward = self.get_output(x_input)
+            exp_reward = self.get_output(x_input.reshape((-1, len(x_input))))
             if((best_reward is None) or (exp_reward > best_reward)):
                 best_reward = exp_reward
                 best_action = action
@@ -96,6 +104,7 @@ class Agent:
             # Auto-reset after this:
             for t in range(max_t):
                 action = None
+                score = 0
                 processed_current_state = self.process_sequence(sequence)
                 if(random.random() < epsilon):
                     action = self.env.action_space.sample()
@@ -104,15 +113,16 @@ class Agent:
                     action = self.get_best_action(processed_current_state)
                 # Get the reward/state information after taking this action:
                 next_state, reward, done, infom = self.env.step(action)
+                score += reward
                 con_array = np.concatenate((self.action_space[action], next_state))
-                sequence.extend(con_array.tolist())
+                sequence.extend(con_array.tolist()) # For extending the sequence to process
                 processed_next_state = self.process_sequence(sequence)
                 # Append to memory (up to limit):
                 if(len(self.memory) < self.memory_size):     
-                    self.memory.append((processed_current_state, action, reward, processed_next_state))
+                    self.memory.append((processed_current_state, action, reward, processed_next_state, done))
                 elif(self.memory_index < self.memory_size):
                     # Overwrite from the beginning(when full):
-                    self.memory[self.memory_index] = (processed_current_state, action, reward, processed_next_state)
+                    self.memory[self.memory_index] = (processed_current_state, action, reward, processed_next_state, done)
                     self.memory_index += 1
                 else:
                     self.memory[0] = (processed_current_state, action, reward, processed_next_state)
@@ -126,4 +136,26 @@ class Agent:
                 if(len(self.memory) >= self.memory_size):
                     break 
             else:
-                print('Game {} of {} complete, memory buffer {}% full'.format(game_counter, n_games, 100.0*len(self.memory)/self.memory_size))
+                print('Memory buffer {}% full, score for game: {}'.format(100.0*len(self.memory)/self.memory_size, score))
+
+    # This will attempt to train the graph:
+    def train_network(self, games = 5000, batch_size=32, epochs=5, initial_epsilon=1.0, gamma=0.95):
+        while(len(self.memory) < batch_size):
+            self.get_samples(False, 1, epsilon=1.0) # Play randomly until memmory has at least batch_size entries
+        # TODO: Check accuracy/score during and after training:
+        for epoch in range(epochs):
+            for game in range(games):
+                print('Game number ', game)
+                self.get_samples(False, 1, epsilon=initial_epsilon) # Play a random game, and record data to memory buffer
+                mini_batch = random.sample(self.memory, batch_size)
+                for state, action, reward, next_state, done in mini_batch:
+                    target = reward
+                    if(not done):
+                        next_best_action = self.get_best_action(next_state)
+                        input_full = np.concatenate((next_state, next_best_action))
+                        target = reward + float(gamma*self.get_output(input_full.reshape((-1, len(input_full))))) 
+                    x_input = np.concatenate((state, self.action_space[action])) # Need to concatenate the action taken for input to be the corrent length
+                    #y_output = self.sess.run(self.output_layer, feed_dict={self.input_data: x_input.reshape((-1, len(x_input)))})
+                    
+                    # Train:
+                    self.sess.run(self.optimize, feed_dict={self.input_data: x_input.reshape((-1, len(x_input))), self.target: np.array([target])})

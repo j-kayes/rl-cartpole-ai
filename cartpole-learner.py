@@ -11,8 +11,7 @@ gamma = 0.95 # Discount rate
 env = gym.make('CartPole-v0')
 state_len = env.observation_space.shape[0] 
 
-with Agent(env, state_len) as agent:
-    print('Getting samples...')
-    agent.get_samples(10000)
+with Agent(env, state_len, lr) as agent:
+    agent.train_network()
 
 print('Done!')
