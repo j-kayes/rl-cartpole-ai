@@ -2,12 +2,9 @@ import gym
 import random
 import numpy as np
 import tensorflow as tf
-from statistics import mean, median
-from collections import Counter
 from agent import *
 
-lr = 1e-3
-gamma = 0.95 # Discount rate
+lr = 5e-5
 env = gym.make('CartPole-v0')
 state_len = env.observation_space.shape[0] 
 
