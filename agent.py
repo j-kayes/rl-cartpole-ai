@@ -1,14 +1,13 @@
-# Copywrite James Kayes (c) 2018
 import tensorflow as tf
 import numpy as np
 import random
 from statistics import mean, median
 
 def fully_connected(input_tensor, outputs, activation_func=tf.nn.relu):
-    result = tf.layers.dense(inputs = input_tensor,
+    result = tf.compat.v1.layers.dense(inputs = input_tensor,
                             units = outputs,
                             activation = activation_func,
-                            kernel_initializer = tf.contrib.layers.xavier_initializer())
+                            kernel_initializer = tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
     return result
 
 class Agent: 
@@ -34,9 +33,8 @@ class Agent:
         
         self.build_model()
         # For saving and loading the graph after training:
-        self.saver = tf.train.Saver(save_relative_paths=True)
-        self.sess = tf.Session()
-        self.sess.run(tf.global_variables_initializer())
+        self.saver = tf.compat.v1.train.Saver(save_relative_paths=True)
+        self.sess = tf.compat.v1.Session()
         
     def __enter__(self):
         return self
@@ -46,19 +44,20 @@ class Agent:
 
     def build_model(self, fc_layers=4, layer_connections=128, hold_rate=1.0):
         # This will be used as the Q*(S,A) estimator:
-        self.input_data = tf.placeholder(tf.float32, [None, self.input_size], name = "x")
-        self.target = tf.placeholder(tf.float32, [None], name = "y")
+        tf.compat.v1.disable_eager_execution()
+        self.input_data = tf.compat.v1.placeholder(tf.float32, [None, self.input_size], name = "x")
+        self.target = tf.compat.v1.placeholder(tf.float32, [None], name = "y")
 
         self.fc_layer = []
-        self.fc_layer.append(tf.layers.dropout(fully_connected(self.input_data, layer_connections), rate=hold_rate))
+        self.fc_layer.append(tf.compat.v1.layers.dropout(fully_connected(self.input_data, layer_connections), rate=hold_rate))
         for layer in range(fc_layers):
-            self.fc_layer.append(tf.layers.dropout(fully_connected(self.fc_layer[layer-1], layer_connections), rate=hold_rate))
+            self.fc_layer.append(tf.compat.v1.layers.dropout(fully_connected(self.fc_layer[layer-1], layer_connections), rate=hold_rate))
         
         # Output layer represents the expected reward for each possible action:  
         self.output_layer = fully_connected(self.fc_layer[fc_layers-1], self.env.action_space.n)
 
         # Predicted action for the best Q-value:
-        self.best_q = tf.reduce_max(self.output_layer)
+        self.best_q = tf.reduce_max(input_tensor=self.output_layer)
 
         # Loss function and optimize node for training:
         self.out_actions = []
@@ -68,8 +67,8 @@ class Agent:
         i = 0
         for action_q in tf.split(self.output_layer, num_or_size_splits=self.env.action_space.n, axis=1):
             self.out_actions.append(action_q)
-            self.loss.append(tf.squared_difference(self.target, action_q))
-            self.optimize.append(tf.train.AdamOptimizer(self.lr).minimize(self.loss[i]))
+            self.loss.append(tf.math.squared_difference(self.target, action_q))
+            self.optimize.append(tf.compat.v1.train.AdamOptimizer(self.lr).minimize(self.loss[i]))
             i += 1
 
     # Pass in the full list of sequence data and this will preprocess into the p_buffer, so that it can be fed to the graph

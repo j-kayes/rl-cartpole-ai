@@ -9,7 +9,7 @@ if __name__ == "__main__":
     state_size = env.observation_space.shape[0] 
 
     with Agent(env, state_size) as agent:
-        #agent.train_network()
+        tf.compat.v1.disable_eager_execution()
         agent.load_model('saved/model.ckpt')
         agent.play(100, epsilo=0.0)
 
